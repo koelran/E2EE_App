@@ -64,7 +64,6 @@ def handle_initialization(data, recv_socket):
         # Step 2: Extract client's phone number and public key
         phone_number = data.get("MyPhoneNumber")
         if not phone_number:
-            recv_socket.sendall(b"Missing phone number.")
             print("Initialization failed: Missing phone number.")
             return
 
