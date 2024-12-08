@@ -96,9 +96,9 @@ def handle_offline_online(request_socket):
             return
 
         # Wait for the user to come back online
-        msg = input("You are offline - type OK to get back online: ")
+        msg = input("You are offline - type ONLINE to get back online: ")
         while msg != 'OK':
-            msg = input("You are offline - type OK to get back online: ")
+            msg = input("You are offline - type ONLINE to get back online: ")
         online_signature = rsaKeyManager.sign_message(phone_number, private_key)
         # Send online request
         data = {
