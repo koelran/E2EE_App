@@ -189,6 +189,11 @@ def encrypt_msg_chunked(data, rec_public_key):
     msg = json.dumps({"encrypted_chunks": serialized_chunks}).encode()
     return msg
 
+def decrypt_msg_chunked(data,rec_private_key):
+    encrypted_chunks = [base64.b64decode(chunk) for chunk in
+                        json.loads(data).get("encrypted_chunks", [])]
+    decrypted_message = decrypt_in_chunks(encrypted_chunks, rec_private_key).decode()
+    return decrypted_message
 
 
 def main():

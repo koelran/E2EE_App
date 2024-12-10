@@ -19,6 +19,24 @@ PORT = 65432        # Server port
 running = True
 phone_number = None
 
+private_key, public_key = rsaKeyManager.generate_rsa_keys()
+
+def receive_ack(recv_socket, client_private_key, server_public_key):
+    try:
+        # Step 1: Receive the encrypted acknowledgment
+        raw_data = recv_socket.recv(4096)
+        decrypted_message = rsaKeyManager.decrypt_msg_chunked(raw_data,client_private_key)
+        # Parse the decrypted JSON message
+        ack_data = json.loads(decrypted_message)
+        # Step 4: Validate the signature
+        command = str(ack_data["Command"])
+        signature = bytes.fromhex(ack_data["signature"])
+        is_valid = rsaKeyManager.verify_signature(command, signature, server_public_key)
+
+        return is_valid
+    except Exception as e:
+        print(f"Error receiving acknowledgment: {e}")
+
 def initial_setup(request_socket):
     global phone_number
     print("Performing initial setup...")
@@ -28,7 +46,6 @@ def initial_setup(request_socket):
         raise Exception("Failed to receive PWD from server.")
     print(f"Received PWD from server: {PWD}")
 
-    private_key, public_key = rsaKeyManager.get_or_generate_keys("client_keys.txt")
     serialized_public_key = public_key.public_bytes(
         encoding=rsaKeyManager.serialization.Encoding.PEM,
         format=rsaKeyManager.serialization.PublicFormat.SubjectPublicKeyInfo
@@ -47,8 +64,11 @@ def initial_setup(request_socket):
     }
     message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
     request_socket.sendall(message)
-    response = request_socket.recv(1024).decode('utf-8')
-    print(f"Server response: {response}")
+    response = receive_ack(request_socket,private_key,server_public_key)
+    if response:
+        print("initializetion acknoleged by the server")
+    else:
+        print("initializetion NOT acknoleged by the server")
 
 # Function to receive messages from the server
 def receive_messages(general_socket):
@@ -71,7 +91,6 @@ def handle_offline_online(request_socket):
     global phone_number
     try:
         # Going offline
-        private_key, public_key = rsaKeyManager.get_or_generate_keys("client_keys.txt")
         serialized_public_key = public_key.public_bytes(
             encoding=rsaKeyManager.serialization.Encoding.PEM,
             format=rsaKeyManager.serialization.PublicFormat.SubjectPublicKeyInfo
@@ -90,14 +109,13 @@ def handle_offline_online(request_socket):
         request_socket.sendall(offline_message)
 
         # Wait for server response
-        response = request_socket.recv(1024).decode('utf-8')
-        print(f"Server response: {response}")
-        if response != "User status updated to offline":
-            return
+        response = receive_ack(request_socket,private_key,server_public_key)
+        if response:
+            print("server akcnowleged offline")
 
         # Wait for the user to come back online
         msg = input("You are offline - type ONLINE to get back online: ")
-        while msg != 'OK':
+        while msg != 'ONLINE':
             msg = input("You are offline - type ONLINE to get back online: ")
         online_signature = rsaKeyManager.sign_message(phone_number, private_key)
         # Send online request
@@ -109,8 +127,8 @@ def handle_offline_online(request_socket):
         }
         online_message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
         request_socket.sendall(online_message)
-        response = request_socket.recv(1024).decode('utf-8')
-        print(f"Server response: {response}")
+        if response:
+            print("server akcnowleged online")
 
     except Exception as e:
         print(f"Error during offline/online handling: {e}")

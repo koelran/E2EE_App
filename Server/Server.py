@@ -2,6 +2,7 @@
 import sys
 import os
 
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 # Add the parent directory (m16) to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -27,6 +28,29 @@ server_private_key, server_public_key = rsaKeyManager.get_or_generate_keys("serv
 running = True  # Global flag to control server state
 pwd = None
 
+def send_ack(send_socket , client_public_key_pem):
+    try:
+        client_public_key = serialization.load_pem_public_key(
+        client_public_key_pem.encode('utf-8'),
+        backend=default_backend()
+        )
+        # Step 1: Create the acknowledgment data
+        command = 3
+        signature = rsaKeyManager.sign_message(str(command), server_private_key)
+        ack_data = {
+            "Command": 3,
+            "signature": signature.hex()
+        }
+        # Step 4: Encrypt the serialized JSON using the client's public key
+        encrypted_ack = rsaKeyManager.encrypt_msg_chunked(ack_data, client_public_key)
+
+        # Step 5: Send the encrypted acknowledgment
+        send_socket.sendall(encrypted_ack)
+        print("Secure acknowledgment sent to client.")
+    except Exception as e:
+        print(f"Error sending acknowledgment: {e}")
+
+
 def send_by_secure_channel(recv_socket):
     """Send the PWD securely to the client before entering the main loop."""
     global pwd
@@ -49,12 +73,10 @@ def handle_initialization(data, recv_socket):
         # Step 1: Receive and validate the PWD
         password = data.get("MyPWD")
         if not password:
-            recv_socket.sendall(b"Missing PWD.")
             print("Initialization failed: Missing PWD.")
             return
 
         if password != pwd:
-            recv_socket.sendall(b"PWD validation failed")
             print("Initialization failed: Invalid PWD.")
             return
 
@@ -69,7 +91,6 @@ def handle_initialization(data, recv_socket):
 
         public_key_pem = data.get("MyPublicKey")
         if not public_key_pem:
-            recv_socket.sendall(b"Missing public key.")
             print("Initialization failed: Missing public key.")
             return
 
@@ -78,11 +99,11 @@ def handle_initialization(data, recv_socket):
         save_database(client_database)
 
         # Step 4: Send success response to the client
-        recv_socket.sendall(b"Initialization successful")
+        send_ack(recv_socket,public_key_pem)
+      #  recv_socket.sendall(b"Initialization successful")
         print(f"Client {phone_number} initialized successfully.")
     except Exception as e:
         print(f"Initialization error: {e}")
-        recv_socket.sendall(b"Initialization failed.")
 
 def handle_offline(data, recv_socket):
     phone_number = data.get("MyPhoneNumber")
@@ -99,7 +120,8 @@ def handle_offline(data, recv_socket):
     if phone_number in client_database:
         client_database[phone_number]["status"] = "offline"
         save_database(client_database)
-        recv_socket.sendall(b"User status updated to offline")
+        send_ack(recv_socket,client_public_key_pem)
+        #recv_socket.sendall(b"User status updated to offline")
         print(f"Client {phone_number} marked as offline.")
         return
     else:
@@ -116,17 +138,15 @@ def handle_online(data, recv_socket):
     is_valid = rsaKeyManager.verify_signature(str(phone_number), decrypted_signature, client_public_key)
     if not is_valid:
         print(f"cant verify {phone_number} message")
-        recv_socket.sendall(b"cant verify you")
         return
 
     if phone_number in client_database:
         client_database[phone_number]["status"] = "online"
         save_database(client_database)
-        recv_socket.sendall(b"User status updated to online")
+        send_ack(recv_socket,client_public_key_pem)
         print(f"Client {phone_number} marked as online.")
         return
     else:
-        recv_socket.sendall(b"Error: Client not found in database")
         print(f"Error: Client {phone_number} not found in database.")
         return
 
@@ -165,9 +185,7 @@ def handle_client(recv_socket, send_socket, addr):
             try:
 
                 # Decrypt the received encrypted chunks
-                encrypted_chunks = [base64.b64decode(chunk) for chunk in
-                                    json.loads(raw_data).get("encrypted_chunks", [])]
-                decrypted_message = rsaKeyManager.decrypt_in_chunks(encrypted_chunks, server_private_key).decode()
+                decrypted_message = rsaKeyManager.decrypt_msg_chunked(raw_data,server_private_key)
                 # Parse the decrypted JSON message
                 data = json.loads(decrypted_message)
                 # Handle initialization if the command is 3
@@ -175,11 +193,9 @@ def handle_client(recv_socket, send_socket, addr):
                     handle_initialization(data, recv_socket)
                 else:
                     print("Expected initialization command (3), but received a different command.")
-                    recv_socket.sendall(b"Invalid initialization command.")
                     return  # Disconnect the client if initialization is invalid
             except Exception as e:
                 print(f"Error processing initialization data: {e}")
-                recv_socket.sendall(b"Initialization failed.")
                 return  # Disconnect the client if initialization fails
 
 
@@ -188,9 +204,7 @@ def handle_client(recv_socket, send_socket, addr):
             if not raw_data:
                 break
             try:
-                encrypted_chunks = [base64.b64decode(chunk) for chunk in
-                                    json.loads(raw_data).get("encrypted_chunks", [])]
-                decrypted_message = rsaKeyManager.decrypt_in_chunks(encrypted_chunks, server_private_key).decode()
+                decrypted_message = rsaKeyManager.decrypt_msg_chunked(raw_data,server_private_key)
                 data = json.loads(decrypted_message)
                 command = data.get("Command")
                 # Handle commands using match-case
