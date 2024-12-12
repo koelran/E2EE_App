@@ -18,8 +18,8 @@ PORT = 65432        # Server port
 # Global variable to signal thread termination
 running = True
 phone_number = None
-
 private_key, public_key = rsaKeyManager.generate_rsa_keys()
+rec_DB = {}
 
 def receive_ack(recv_socket, client_private_key, server_public_key):
     try:
@@ -46,24 +46,26 @@ def initial_setup(request_socket):
         raise Exception("Failed to receive PWD from server.")
     print(f"Received PWD from server: {PWD}")
 
-    serialized_public_key = public_key.public_bytes(
-        encoding=rsaKeyManager.serialization.Encoding.PEM,
-        format=rsaKeyManager.serialization.PublicFormat.SubjectPublicKeyInfo
-    ).decode()
-
+    serialized_public_key = rsaKeyManager.get_serialized_public_key(public_key)
     print("Generated and saved RSA keys.")
-
     phone_number = input("Enter your phone number (6 digits): ")
 
     server_public_key = client_init.load_server_public_key()
-    data = {
-        "Command": 3,
+    data_for_encryption = {
         "MyPhoneNumber": phone_number,
         "MyPublicKey": serialized_public_key,
         "MyPWD": PWD
     }
-    message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
-    request_socket.sendall(message)
+    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption,server_public_key)
+    message = {
+        "Command": 3,
+        "DestPhoneNumber": 000000,
+        "encrypted_chunks": encrypted_data
+    }
+    serialized_message = json.dumps(message)
+    request_socket.sendall(serialized_message.encode('utf-8'))
+    #message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
+    #request_socket.sendall(message)
     response = receive_ack(request_socket,private_key,server_public_key)
     if response:
         print("initializetion acknoleged by the server")
@@ -91,23 +93,22 @@ def handle_offline_online(request_socket):
     global phone_number
     try:
         # Going offline
-        serialized_public_key = public_key.public_bytes(
-            encoding=rsaKeyManager.serialization.Encoding.PEM,
-            format=rsaKeyManager.serialization.PublicFormat.SubjectPublicKeyInfo
-        ).decode()
         online_signature = rsaKeyManager.sign_message(phone_number , private_key)
         server_public_key = client_init.load_server_public_key()
 
         # Send offline request
-        data = {
-            "Command": 5,
+        data_for_encryption = {
             "MyPhoneNumber": phone_number,
-            "MyPublicKey": serialized_public_key,
             "signature": online_signature.hex()
         }
-        offline_message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
-        request_socket.sendall(offline_message)
-
+        encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, server_public_key)
+        message = {
+            "Command": 5,
+            "DestPhoneNumber": 000000,
+            "encrypted_chunks": encrypted_data
+        }
+        serialized_message = json.dumps(message)
+        request_socket.sendall(serialized_message.encode('utf-8'))
         # Wait for server response
         response = receive_ack(request_socket,private_key,server_public_key)
         if response:
@@ -119,39 +120,78 @@ def handle_offline_online(request_socket):
             msg = input("You are offline - type ONLINE to get back online: ")
         online_signature = rsaKeyManager.sign_message(phone_number, private_key)
         # Send online request
-        data = {
-            "Command": 4,
+        data_for_encryption = {
             "MyPhoneNumber": phone_number,
-            "MyPublicKey": serialized_public_key,
             "signature": online_signature.hex()
         }
-        online_message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
-        request_socket.sendall(online_message)
-        if response:
-            print("server akcnowleged online")
+        encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, server_public_key)
+        message = {
+            "Command": 4,
+            "DestPhoneNumber": 000000,
+            "encrypted_chunks": encrypted_data
+        }
+        serialized_message = json.dumps(message)
+        request_socket.sendall(serialized_message.encode('utf-8'))
 
     except Exception as e:
         print(f"Error during offline/online handling: {e}")
 
+def get_rec_public_key(request_socket, rec_pnum):
+    if rec_pnum in rec_DB:
+        return rec_DB[rec_pnum]
 
+    online_signature = rsaKeyManager.sign_message(phone_number, private_key)
+    server_public_key = client_init.load_server_public_key()
+    data_for_encryption = {
+        "MyPhoneNumber": phone_number,
+        "signature": online_signature.hex()
+    }
+    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, server_public_key)
+    message = {
+        "Command": 1,
+        "DestPhoneNumber": rec_pnum,
+        "encrypted_chunks": encrypted_data
+    }
+    serialized_message = json.dumps(message)
+    request_socket.sendall(serialized_message.encode('utf-8'))
+
+    raw_data = request_socket.recv(4096).decode('utf-8')
+    public_data = json.loads(raw_data)
+    decrypted_data = rsaKeyManager.chunk_decrypt(public_data.get("encrypted_chunks"), private_key)
+    command = public_data.get("Command")
+    if command == 2:
+        decrypted_signature = bytes.fromhex(decrypted_data.get('signature'))
+        is_valid = rsaKeyManager.verify_signature(rec_pnum, decrypted_signature, server_public_key)
+        if not is_valid:
+            print(f"cant verify {phone_number} message")
+        des_public_key = decrypted_data["DestPublicKey"]
+        rec_DB[rec_pnum] = des_public_key
+        return des_public_key
+
+
+def send_message_to_x(request_socket, rec_public_key, message):
+    pass
 # Function to send messages to the server
 def send_messages(request_socket):
     global running
     try:
         print("\n---type 'QUIT' to go offline---\n")
         while running:
-            recipient = input("Enter recipient's name: ")
-            if recipient.upper() == 'QUIT':
+            rec_pnum = input("Enter phone number : ")
+            if rec_pnum.upper() == 'QUIT':
                 handle_offline_online(request_socket)
                 continue
 
-            message = input(f"Enter your message for {recipient}: ")
-            if recipient.upper() == 'QUIT':
+            rec_public_key = get_rec_public_key(request_socket,rec_pnum)
+
+            message = input(f"Enter your message for {rec_pnum}: ")
+            if message.upper() == 'QUIT':
                 handle_offline_online(request_socket)
                 continue
+            else:
+                send_message_to_x(request_socket,rec_public_key,message)
 
-            full_message = f"{recipient}:{message}"
-            request_socket.send(full_message.encode('utf-8'))
+
     except Exception as e:
         print(f"Error during message sending: {e}")
     finally:

@@ -94,6 +94,11 @@ def get_or_generate_keys(file_path="keys.txt"):
         save_keys_to_file(private_key, public_key, file_path)
     return private_key, public_key
 
+def get_serialized_public_key(public_key):
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
 
 def encrypt_message(message, public_key):
     """Encrypt a message using the provided public key."""
@@ -183,6 +188,17 @@ def decrypt_in_chunks(encrypted_chunks, private_key):
         decrypted_data += decrypted_chunk
     return decrypted_data
 
+def chunk_encrypt(data_for_encryption, public_key):
+    encrypted_chunks = encrypt_in_chunks(json.dumps(data_for_encryption).encode(), public_key)
+    serialized_chunks = [base64.b64encode(chunk).decode('utf-8') for chunk in encrypted_chunks]
+    return serialized_chunks
+
+def chunk_decrypt(serialized_chunks, server_private_key):
+    encrypted_chunks = [base64.b64decode(chunk) for chunk in serialized_chunks]
+    decrypted_data = decrypt_in_chunks(encrypted_chunks, server_private_key)
+    original_data = json.loads(decrypted_data.decode('utf-8'))
+    return original_data
+
 def encrypt_msg_chunked(data, rec_public_key):
     encrypted_chunks = encrypt_in_chunks(json.dumps(data).encode(), rec_public_key)
     serialized_chunks = [base64.b64encode(chunk).decode('utf-8') for chunk in encrypted_chunks]
@@ -194,6 +210,7 @@ def decrypt_msg_chunked(data,rec_private_key):
                         json.loads(data).get("encrypted_chunks", [])]
     decrypted_message = decrypt_in_chunks(encrypted_chunks, rec_private_key).decode()
     return decrypted_message
+
 
 
 def main():

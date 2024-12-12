@@ -14,7 +14,7 @@ from clientsDB import add_client, update_client_status, update_client_messages, 
 import rsaKeyManager
 import random
 import string
-pwd = None
+#pwd = None
 
 # Server details
 HOST = '127.0.0.1'  # Localhost for testing
@@ -26,7 +26,6 @@ clients = {}
 client_database = load_database()
 server_private_key, server_public_key = rsaKeyManager.get_or_generate_keys("server_keys.txt")  # RSA keys for the server
 running = True  # Global flag to control server state
-pwd = None
 
 def send_ack(send_socket , client_public_key_pem):
     try:
@@ -50,10 +49,7 @@ def send_ack(send_socket , client_public_key_pem):
     except Exception as e:
         print(f"Error sending acknowledgment: {e}")
 
-
 def send_by_secure_channel(recv_socket):
-    """Send the PWD securely to the client before entering the main loop."""
-    global pwd
     try:
         # Generate a random PWD
         pwd = ''.join(random.choices(string.digits, k=6))
@@ -62,13 +58,11 @@ def send_by_secure_channel(recv_socket):
         # Send the PWD directly to the client
         recv_socket.sendall(pwd.encode('utf-8'))
         print("PWD sent to the client via secure channel.")
+        return pwd
     except Exception as e:
         print(f"Error in send_by_secure_channel: {e}")
 
-
-def handle_initialization(data, recv_socket):
-    """Handle the client initialization process, including password reception and validation."""
-    global pwd
+def handle_initialization(data, recv_socket, pwd):
     try:
         # Step 1: Receive and validate the PWD
         password = data.get("MyPWD")
@@ -150,6 +144,31 @@ def handle_online(data, recv_socket):
         print(f"Error: Client {phone_number} not found in database.")
         return
 
+def send_public_key(data, des_pnum, recv_socket):
+    my_phone_number = data.get("MyPhoneNumber")
+    my_public_key_pem = client_database[my_phone_number]["public_key"]
+    my_public_key = serialization.load_pem_public_key(
+        my_public_key_pem.encode('utf-8'),
+        backend=default_backend()
+    )
+    des_public_key = client_database[des_pnum]["public_key"]
+
+    online_signature = rsaKeyManager.sign_message(des_pnum, server_private_key)
+
+
+    data_for_encryption = {
+        "DestPublicKey": des_public_key,
+        "signature": online_signature.hex()
+    }
+    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, my_public_key)
+    message = {
+        "Command": 2,
+        "DestPhoneNumber": des_pnum,
+        "encrypted_chunks": encrypted_data
+    }
+    serialized_message = json.dumps(message)
+    recv_socket.sendall(serialized_message.encode('utf-8'))
+    print(f"public key of: {des_pnum}, sent to: {my_phone_number}")
 
 """def handle_message(data):
     dest_phone_number = data["DestPhoneNumber"]
@@ -178,19 +197,15 @@ def handle_client(recv_socket, send_socket, addr):
     print(f"Client connected from {addr}")
     try:
         # Step 1: Send PWD to client
-        send_by_secure_channel(recv_socket)
+        pwd = send_by_secure_channel(recv_socket)
         # Step 2: Receive initialization data before entering the main loop
         raw_data = recv_socket.recv(2048).decode('utf-8')
         if raw_data:
             try:
-
-                # Decrypt the received encrypted chunks
-                decrypted_message = rsaKeyManager.decrypt_msg_chunked(raw_data,server_private_key)
-                # Parse the decrypted JSON message
-                data = json.loads(decrypted_message)
-                # Handle initialization if the command is 3
-                if data.get("Command") == 3:
-                    handle_initialization(data, recv_socket)
+                public_data = json.loads(raw_data)
+                decrypted_data = rsaKeyManager.chunk_decrypt(public_data.get("encrypted_chunks") , server_private_key)
+                if public_data.get("Command") == 3:
+                    handle_initialization(decrypted_data, recv_socket,pwd)
                 else:
                     print("Expected initialization command (3), but received a different command.")
                     return  # Disconnect the client if initialization is invalid
@@ -204,15 +219,17 @@ def handle_client(recv_socket, send_socket, addr):
             if not raw_data:
                 break
             try:
-                decrypted_message = rsaKeyManager.decrypt_msg_chunked(raw_data,server_private_key)
-                data = json.loads(decrypted_message)
-                command = data.get("Command")
+                public_data = json.loads(raw_data)
+                decrypted_data = rsaKeyManager.chunk_decrypt(public_data.get("encrypted_chunks"), server_private_key)
+                command = public_data.get("Command")
                 # Handle commands using match-case
                 match command:
+                    case 1:
+                        send_public_key(decrypted_data, public_data["DestPhoneNumber"], recv_socket)
                     case 4:
-                        handle_online(data, recv_socket)
+                        handle_online(decrypted_data, recv_socket)
                     case 5:
-                        handle_offline(data, recv_socket)
+                        handle_offline(decrypted_data, recv_socket)
                     case _:
                         print(f"Unknown command received: {command}")
             except Exception as e:
