@@ -1,6 +1,9 @@
 import sys
 import os
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+
 # Add the parent directory (m16) to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import json
@@ -73,17 +76,31 @@ def initial_setup(request_socket):
         print("initializetion NOT acknoleged by the server")
 
 # Function to receive messages from the server
-def receive_messages(general_socket):
+def receive_messages(general_socket, request_socket):
     global running
     while running:
         try:
-            message = general_socket.recv(1024).decode('utf-8')
-            if message:  # Only display if there's an actual message
-                print(f"\n{message}")
-            else:
-                # If no message, the server may have closed the connection
-                print("\nConnection closed by the server.")
-                break
+            raw_data = general_socket.recv(4096).decode('utf-8')
+            public_data = json.loads(raw_data)
+            encrypted_data = public_data.get("encrypted_chunks")
+            decrypted_data = rsaKeyManager.chunk_decrypt(encrypted_data, private_key)
+
+            src_pnum = decrypted_data["SourcePhoneNumber"]
+            rec_public_key = get_rec_public_key(request_socket,src_pnum)
+
+            command = public_data.get("Command")
+            if command == 1:
+                decrypted_signature = bytes.fromhex(decrypted_data.get('signature'))
+                is_valid = rsaKeyManager.verify_signature(phone_number, decrypted_signature, rec_public_key)
+                if not is_valid:
+                    print(f"cant verify {phone_number} message")
+                else:
+                    message = decrypted_data["Message"]
+
+                    # Overwrite with a new message without adding a newline
+                    print(f"message from, {src_pnum} : {message}")
+
+
         except Exception as e:
             if running:  # Ignore exceptions after the program stops
                 print(f"Error receiving message: {e}")
@@ -132,6 +149,7 @@ def handle_offline_online(request_socket):
         }
         serialized_message = json.dumps(message)
         request_socket.sendall(serialized_message.encode('utf-8'))
+        print("you are back online")
 
     except Exception as e:
         print(f"Error during offline/online handling: {e}")
@@ -164,20 +182,39 @@ def get_rec_public_key(request_socket, rec_pnum):
         is_valid = rsaKeyManager.verify_signature(rec_pnum, decrypted_signature, server_public_key)
         if not is_valid:
             print(f"cant verify {phone_number} message")
-        des_public_key = decrypted_data["DestPublicKey"]
-        rec_DB[rec_pnum] = des_public_key
-        return des_public_key
+        else:
+            des_public_key_pem = decrypted_data["DestPublicKey"]
+            dest_public_key = serialization.load_pem_public_key(
+                des_public_key_pem.encode('utf-8'),
+                backend=default_backend()
+            )
+            rec_DB[rec_pnum] = dest_public_key
+            return dest_public_key
 
 
-def send_message_to_x(request_socket, rec_public_key, message):
-    pass
+def send_message_to_x(request_socket, rec_public_key,rec_pnum, message):
+    online_signature = rsaKeyManager.sign_message(rec_pnum, private_key)
+    data_for_encryption = {
+        "SourcePhoneNumber": phone_number,
+        "Message": message,
+        "signature": online_signature.hex()
+    }
+    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, rec_public_key)
+    message = {
+        "Command": 2,
+        "DestPhoneNumber": rec_pnum,
+        "encrypted_chunks": encrypted_data
+    }
+    serialized_message = json.dumps(message)
+    request_socket.sendall(serialized_message.encode('utf-8'))
+
 # Function to send messages to the server
 def send_messages(request_socket):
     global running
     try:
         print("\n---type 'QUIT' to go offline---\n")
         while running:
-            rec_pnum = input("Enter phone number : ")
+            rec_pnum = input("Enter recipients phone number : ")
             if rec_pnum.upper() == 'QUIT':
                 handle_offline_online(request_socket)
                 continue
@@ -189,7 +226,7 @@ def send_messages(request_socket):
                 handle_offline_online(request_socket)
                 continue
             else:
-                send_message_to_x(request_socket,rec_public_key,message)
+                send_message_to_x(request_socket,rec_public_key,rec_pnum,message)
 
 
     except Exception as e:
@@ -214,7 +251,7 @@ def connect_to_server():
     initial_setup(request_socket)
 
     # Start a thread to handle receiving messages
-    receive_thread = threading.Thread(target=receive_messages, args=(general_socket,))
+    receive_thread = threading.Thread(target=receive_messages, args=(general_socket,request_socket))
     receive_thread.start()
 
     # Handle sending messages in the main thread

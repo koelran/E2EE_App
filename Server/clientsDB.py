@@ -30,7 +30,7 @@ def save_database(database, file_path="client_database.json"):
     print(f"Database saved to {file_path}.")
 
 
-def add_client(phone_number, public_key_pem, status, message1="", message2="", database=None):
+def add_client(phone_number, public_key_pem, status, database=None):
     if database is None:
         raise ValueError("A valid database must be provided.")
 
@@ -45,7 +45,7 @@ def add_client(phone_number, public_key_pem, status, message1="", message2="", d
         database[phone_number] = {
             "public_key": public_key_pem,
             "status": status,
-            "messages": [message1, message2]
+            "messages": []
         }
         print(f"Client {phone_number} added successfully to DB.")
 
