@@ -13,6 +13,7 @@ import rsaKeyManager
 import base64
 from ClientTools import chunk_json_data
 import client_init
+import time
 
 # Server details
 HOST = '127.0.0.1'  # Server IP address (localhost for testing)
@@ -84,9 +85,10 @@ def receive_messages(general_socket, request_socket):
             public_data = json.loads(raw_data)
             encrypted_data = public_data.get("encrypted_chunks")
             decrypted_data = rsaKeyManager.chunk_decrypt(encrypted_data, private_key)
-
             src_pnum = decrypted_data["SourcePhoneNumber"]
             rec_public_key = get_rec_public_key(request_socket,src_pnum)
+            print(rec_public_key)
+            #time.sleep(0.2)
 
             command = public_data.get("Command")
             if command == 1:
@@ -98,7 +100,7 @@ def receive_messages(general_socket, request_socket):
                     message = decrypted_data["Message"]
 
                     # Overwrite with a new message without adding a newline
-                    print(f"message from, {src_pnum} : {message}")
+                    print(f"\nmessage from, {src_pnum} : {message}")
 
 
         except Exception as e:
@@ -179,7 +181,7 @@ def get_rec_public_key(request_socket, rec_pnum):
     command = public_data.get("Command")
     if command == 2:
         decrypted_signature = bytes.fromhex(decrypted_data.get('signature'))
-        is_valid = rsaKeyManager.verify_signature(rec_pnum, decrypted_signature, server_public_key)
+        is_valid = rsaKeyManager.verify_signature(phone_number, decrypted_signature, server_public_key)
         if not is_valid:
             print(f"cant verify {phone_number} message")
         else:

@@ -74,9 +74,6 @@ def handle_initialization(data, recv_socket,send_socket, pwd):
             print("Initialization failed: Invalid PWD.")
             return
 
-        # Clear the PWD after validation for security
-        pwd = None
-
         # Step 2: Extract client's phone number and public key
         phone_number = data.get("MyPhoneNumber")
         if not phone_number:
@@ -145,6 +142,12 @@ def handle_online(data, recv_socket):
         save_database(client_database)
         send_ack(recv_socket,client_public_key_pem)
         print(f"Client {phone_number} marked as online.")
+        stored_msg_lst = client_database[phone_number]["messages"]
+        if len(stored_msg_lst) > 0:
+            for encrypted_msg in stored_msg_lst:
+                transfer_message_between_clients(encrypted_msg, phone_number)
+            client_database[phone_number]["messages"] = []
+            save_database(client_database)
         return
     else:
         print(f"Error: Client {phone_number} not found in database.")
@@ -161,7 +164,7 @@ def send_public_key(data, des_pnum, recv_socket):
     )
     des_public_key = client_database[des_pnum]["public_key"]
 
-    online_signature = rsaKeyManager.sign_message(des_pnum, server_private_key)
+    online_signature = rsaKeyManager.sign_message(my_phone_number, server_private_key)
 
 
     data_for_encryption = {
@@ -179,7 +182,6 @@ def send_public_key(data, des_pnum, recv_socket):
     print(f"public key of: {des_pnum}, sent to: {my_phone_number}")
 
 def transfer_message_between_clients(message,des_pnum ):
-    #print(client_sockets)
     try:
         des_socket = client_sockets[des_pnum]
     except Exception as e:
@@ -199,28 +201,6 @@ def transfer_message_between_clients(message,des_pnum ):
     else:
         print(f"Error: Client {des_pnum} not found in database.")
         return
-
-"""def handle_message(data):
-    dest_phone_number = data["DestPhoneNumber"]
-    source_phone_number = data["SourcePhoneNumber"]
-    message = data["Message"]
-
-    # Check if destination client exists in the database
-    if dest_phone_number in server_database:
-        recipient_data = server_database[dest_phone_number]
-        if recipient_data["status"] == "online":
-            # Forward the message
-            recipient_socket = clients.get(dest_phone_number)
-            if recipient_socket:
-                recipient_socket.sendall(f"Message from {source_phone_number}: {message}".encode('utf-8'))
-            print(f"Forwarding message from {source_phone_number} to {dest_phone_number}")
-        else:
-            # Store the message offline
-            update_client_messages(dest_phone_number, message1=message, message2="")
-            save_database(server_database)
-            print(f"Storing message for offline client {dest_phone_number}")
-    else:
-        print(f"Client {dest_phone_number} not found in the database.")"""
 
 def handle_client(recv_socket, send_socket, addr):
     """Handle individual client connections."""
