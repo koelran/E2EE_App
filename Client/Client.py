@@ -86,9 +86,7 @@ def receive_messages(general_socket, request_socket):
             encrypted_data = public_data.get("encrypted_chunks")
             decrypted_data = rsaKeyManager.chunk_decrypt(encrypted_data, private_key)
             src_pnum = decrypted_data["SourcePhoneNumber"]
-            rec_public_key = get_rec_public_key(request_socket,src_pnum)
-            print(rec_public_key)
-            #time.sleep(0.2)
+            rec_public_key = get_rec_public_key(request_socket, src_pnum)
 
             command = public_data.get("Command")
             if command == 1:
@@ -101,7 +99,6 @@ def receive_messages(general_socket, request_socket):
 
                     # Overwrite with a new message without adding a newline
                     print(f"\nmessage from, {src_pnum} : {message}")
-
 
         except Exception as e:
             if running:  # Ignore exceptions after the program stops
@@ -221,14 +218,11 @@ def send_messages(request_socket):
                 handle_offline_online(request_socket)
                 continue
 
-            rec_public_key = get_rec_public_key(request_socket,rec_pnum)
+            rec_public_key = get_rec_public_key(request_socket, rec_pnum)
 
             message = input(f"Enter your message for {rec_pnum}: ")
-            if message.upper() == 'QUIT':
-                handle_offline_online(request_socket)
-                continue
-            else:
-                send_message_to_x(request_socket,rec_public_key,rec_pnum,message)
+            send_message_to_x(request_socket, rec_public_key, rec_pnum, message)
+
 
 
     except Exception as e:
