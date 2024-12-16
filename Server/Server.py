@@ -14,7 +14,7 @@ from clientsDB import add_client, update_client_status, update_client_messages, 
 import rsaKeyManager
 import random
 import string
-#pwd = None
+
 
 # Server details
 HOST = '127.0.0.1'  # Localhost for testing
@@ -140,7 +140,6 @@ def handle_online(data, recv_socket):
     if phone_number in client_database:
         client_database[phone_number]["status"] = "online"
         save_database(client_database)
-        send_ack(recv_socket,client_public_key_pem)
         print(f"Client {phone_number} marked as online.")
         stored_msg_lst = client_database[phone_number]["messages"]
         if len(stored_msg_lst) > 0:
