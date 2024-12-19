@@ -10,10 +10,7 @@ import json
 import socket
 import threading
 import rsaKeyManager
-import base64
-from ClientTools import chunk_json_data
 import client_init
-import time
 
 # Server details
 HOST = '127.0.0.1'  # Server IP address (localhost for testing)
@@ -60,7 +57,7 @@ def initial_setup(request_socket):
         "MyPublicKey": serialized_public_key,
         "MyPWD": PWD
     }
-    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption,server_public_key)
+    encrypted_data = rsaKeyManager.chunk_encrypt(data_for_encryption, server_public_key)
     message = {
         "Command": 3,
         "DestPhoneNumber": 000000,
@@ -70,7 +67,7 @@ def initial_setup(request_socket):
     request_socket.sendall(serialized_message.encode('utf-8'))
     #message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
     #request_socket.sendall(message)
-    response = receive_ack(request_socket,private_key,server_public_key)
+    response = receive_ack(request_socket,private_key, server_public_key)
     if response:
         print("initializetion acknoleged by the server")
     else:
@@ -95,10 +92,13 @@ def receive_messages(general_socket, request_socket):
                 if not is_valid:
                     print(f"cant verify {phone_number} message")
                 else:
-                    message = decrypted_data["Message"]
-
-                    # Overwrite with a new message without adding a newline
-                    print(f"\nmessage from, {src_pnum} : {message}")
+                    if decrypted_data["Command"] == 0:
+                        message = decrypted_data["Message"]
+                        # Overwrite with a new message without adding a newline
+                        print(f"\nmessage from, {src_pnum} : {message}")
+                        send_message_or_ack(request_socket, rec_public_key, src_pnum, "", 1)
+                    elif decrypted_data["Command"] == 1:
+                        print(f"\nclient, {src_pnum} recived message")
 
         except Exception as e:
             if running:  # Ignore exceptions after the program stops
@@ -109,7 +109,7 @@ def handle_offline_online(request_socket):
     global phone_number
     try:
         # Going offline
-        online_signature = rsaKeyManager.sign_message(phone_number , private_key)
+        online_signature = rsaKeyManager.sign_message(phone_number, private_key)
         server_public_key = client_init.load_server_public_key()
 
         # Send offline request
@@ -126,7 +126,7 @@ def handle_offline_online(request_socket):
         serialized_message = json.dumps(message)
         request_socket.sendall(serialized_message.encode('utf-8'))
         # Wait for server response
-        response = receive_ack(request_socket,private_key,server_public_key)
+        response = receive_ack(request_socket,private_key, server_public_key)
         if response:
             print("server akcnowleged offline")
 
@@ -191,9 +191,10 @@ def get_rec_public_key(request_socket, rec_pnum):
             return dest_public_key
 
 
-def send_message_to_x(request_socket, rec_public_key,rec_pnum, message):
+def send_message_or_ack(request_socket, rec_public_key, rec_pnum, message, command):
     online_signature = rsaKeyManager.sign_message(rec_pnum, private_key)
     data_for_encryption = {
+        "Command": command,
         "SourcePhoneNumber": phone_number,
         "Message": message,
         "signature": online_signature.hex()
@@ -221,10 +222,7 @@ def send_messages(request_socket):
             rec_public_key = get_rec_public_key(request_socket, rec_pnum)
 
             message = input(f"Enter your message for {rec_pnum}: ")
-            send_message_to_x(request_socket, rec_public_key, rec_pnum, message)
-
-
-
+            send_message_or_ack(request_socket, rec_public_key, rec_pnum, message, 0)
     except Exception as e:
         print(f"Error during message sending: {e}")
     finally:

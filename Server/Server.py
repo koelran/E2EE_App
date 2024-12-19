@@ -10,7 +10,7 @@ import socket
 import threading
 import json
 import base64
-from clientsDB import add_client, update_client_status, update_client_messages, load_database, save_database
+from clientsDB import add_client, load_database, save_database
 import rsaKeyManager
 import random
 import string
@@ -250,10 +250,6 @@ def handle_client(recv_socket, send_socket, addr):
         print(f"Error handling client: {e}")
     finally:
         # Mark the client as offline
-        for phone_number, client_data in client_database.items():
-            if client_data.get("status") == "online":
-                update_client_status(phone_number, "offline")
-                save_database(client_database)
         recv_socket.close()
         send_socket.close()
         print(f"Client from {addr} disconnected.")
