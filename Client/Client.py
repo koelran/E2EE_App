@@ -65,8 +65,6 @@ def initial_setup(request_socket):
     }
     serialized_message = json.dumps(message)
     request_socket.sendall(serialized_message.encode('utf-8'))
-    #message = rsaKeyManager.encrypt_msg_chunked(data, server_public_key)
-    #request_socket.sendall(message)
     response = receive_ack(request_socket,private_key, server_public_key)
     if response:
         print("initializetion acknoleged by the server")
