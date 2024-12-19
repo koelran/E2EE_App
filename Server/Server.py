@@ -100,7 +100,7 @@ def handle_initialization(data, recv_socket,send_socket, pwd):
     except Exception as e:
         print(f"Initialization error: {e}")
 
-def handle_offline(data, recv_socket):
+def handle_client_offline(data, recv_socket):
     data = rsaKeyManager.chunk_decrypt(data, server_private_key)
     phone_number = data.get("MyPhoneNumber")
     #validate signature
@@ -125,7 +125,7 @@ def handle_offline(data, recv_socket):
         print(f"Error: Client {phone_number} not found in database.")
         return
 
-def handle_online(data, recv_socket):
+def handle_client_online(data, recv_socket):
     data = rsaKeyManager.chunk_decrypt(data, server_private_key)
     phone_number = data.get("MyPhoneNumber")
     # validate signature
@@ -152,7 +152,7 @@ def handle_online(data, recv_socket):
         print(f"Error: Client {phone_number} not found in database.")
         return
 
-def send_public_key(data, des_pnum, recv_socket):
+def send_client_public_key(data, des_pnum, recv_socket):
     #decrypte data
     data = rsaKeyManager.chunk_decrypt(data, server_private_key)
     my_phone_number = data.get("MyPhoneNumber")
@@ -234,13 +234,13 @@ def handle_client(recv_socket, send_socket, addr):
                 # Handle commands using match-case
                 match command:
                     case 1:
-                        send_public_key(encrypted_data, public_data["DestPhoneNumber"], recv_socket)
+                        send_client_public_key(encrypted_data, public_data["DestPhoneNumber"], recv_socket)
                     case 2:
                         transfer_message_between_clients(encrypted_data, public_data["DestPhoneNumber"])
                     case 4:
-                        handle_online(encrypted_data, recv_socket)
+                        handle_client_online(encrypted_data, recv_socket)
                     case 5:
-                        handle_offline(encrypted_data, recv_socket)
+                        handle_client_offline(encrypted_data, recv_socket)
                     case _:
                         print(f"Unknown command received: {command}")
             except Exception as e:
