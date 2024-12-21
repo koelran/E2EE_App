@@ -181,6 +181,8 @@ def get_rec_public_key(request_socket, rec_pnum):
             print(f"cant verify {phone_number} message")
         else:
             des_public_key_pem = decrypted_data["DestPublicKey"]
+            if not des_public_key_pem:
+                return des_public_key_pem
             dest_public_key = serialization.load_pem_public_key(
                 des_public_key_pem.encode('utf-8'),
                 backend=default_backend()
@@ -218,9 +220,11 @@ def send_messages(request_socket):
                 continue
 
             rec_public_key = get_rec_public_key(request_socket, rec_pnum)
-
-            message = input(f"Enter your message for {rec_pnum}: ")
-            send_message_or_ack(request_socket, rec_public_key, rec_pnum, message, 0)
+            if rec_public_key:
+                message = input(f"Enter your message for {rec_pnum}: ")
+                send_message_or_ack(request_socket, rec_public_key, rec_pnum, message, 0)
+            else:
+                print(f"{rec_pnum} not exists")
     except Exception as e:
         print(f"Error during message sending: {e}")
     finally:

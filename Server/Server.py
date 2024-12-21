@@ -161,7 +161,10 @@ def send_client_public_key(data, des_pnum, recv_socket):
         my_public_key_pem.encode('utf-8'),
         backend=default_backend()
     )
-    des_public_key = client_database[des_pnum]["public_key"]
+    if des_pnum not in client_database:
+        des_public_key = None
+    else:
+        des_public_key = client_database[des_pnum]["public_key"]
 
     online_signature = rsaKeyManager.sign_message(my_phone_number, server_private_key)
 
@@ -180,7 +183,7 @@ def send_client_public_key(data, des_pnum, recv_socket):
     recv_socket.sendall(serialized_message.encode('utf-8'))
     print(f"public key of: {des_pnum}, sent to: {my_phone_number}")
 
-def transfer_message_between_clients(message,des_pnum ):
+def transfer_message_between_clients(message,des_pnum):
     try:
         des_socket = client_sockets[des_pnum]
     except Exception as e:
