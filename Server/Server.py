@@ -200,6 +200,7 @@ def transfer_message_between_clients(message,des_pnum):
             }
             serialized_message = json.dumps(message)
             des_socket.sendall(serialized_message.encode('utf-8'))
+            print(f"message transferred to: {des_pnum}")
     else:
         print(f"Error: Client {des_pnum} not found in database.")
         return
