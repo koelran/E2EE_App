@@ -86,7 +86,7 @@ def receive_messages(general_socket, request_socket):
             command = public_data.get("Command")
             if command == 1:
                 decrypted_signature = bytes.fromhex(decrypted_data.get('signature'))
-                is_valid = rsaKeyManager.verify_signature(phone_number, decrypted_signature, rec_public_key)
+                is_valid = rsaKeyManager.verify_signature(src_pnum, decrypted_signature, rec_public_key)
                 if not is_valid:
                     print(f"cant verify {phone_number} message")
                 else:
@@ -192,7 +192,7 @@ def get_rec_public_key(request_socket, rec_pnum):
 
 
 def send_message_or_ack(request_socket, rec_public_key, rec_pnum, message, command):
-    online_signature = rsaKeyManager.sign_message(rec_pnum, private_key)
+    online_signature = rsaKeyManager.sign_message(phone_number, private_key)
     data_for_encryption = {
         "Command": command,
         "SourcePhoneNumber": phone_number,
